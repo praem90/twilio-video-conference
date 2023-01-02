@@ -1,6 +1,25 @@
+
 const form = document.getElementById("room-name-form");
 const roomNameInput = document.getElementById("room-name-input");
 const container = document.getElementById("video-container");
+const messageForm = document.getElementById("message-form");
+const messageInput = document.getElementById("message-input");
+
+const dataTrack = new Twilio.Video.LocalDataTrack();
+const dataTrackPublished = {};
+dataTrackPublished.promise = new Promise((resolve, reject) => {
+  dataTrackPublished.resolve = resolve;
+  dataTrackPublished.reject = reject;
+});
+
+messageForm.addEventListener('submit', e => {
+    e.preventDefault();
+    const data = JSON.stringify({
+        message: messageInput.value
+    });
+    dataTrackPublished.promise.then(() => dataTrack.send(data));
+    messageInput.value = '';
+});
 
 const startRoom = async (event) => {
   // prevent a page reload when a user submits the form
@@ -21,13 +40,29 @@ const startRoom = async (event) => {
   });
   const { token } = await response.json();
 
-    console.log(token);
   // join the video room with the token
   const room = await joinVideoRoom(roomName, token);
-    console.log(room);
+
+    document.getElementById('message-container').classList.remove('hidden');
 
   // render the local and remote participants' video and audio tracks
   handleConnectedParticipant(room.localParticipant);
+    room.localParticipant.publishTrack(dataTrack);
+
+
+
+room.localParticipant.on('trackPublished', publication => {
+  if (publication.track === dataTrack) {
+    dataTrackPublished.resolve();
+  }
+});
+
+room.localParticipant.on('trackPublicationFailed', (error, track) => {
+  if (track === dataTrack) {
+    dataTrackPublished.reject(error);
+  }
+});
+
   room.participants.forEach(handleConnectedParticipant);
   room.on("participantConnected", handleConnectedParticipant);
 
@@ -55,6 +90,17 @@ const handleConnectedParticipant = (participant) => {
 
 const handleTrackPublication = (trackPublication, participant) => {
   function displayTrack(track) {
+      if (track.kind === 'data') {
+          track.on('message', data => {
+              data = JSON.parse(data);
+              console.log(data);
+              const message = document.createElement('li');
+              message.classList.add('px-4', 'py-4');
+              message.innerText = data.message;
+              document.getElementById('messages').appendChild(message);
+          });
+          return;
+      }
     // append this track to the participant's div and render it on the page
     const participantDiv = document.getElementById(participant.identity);
     // track.attach creates an HTMLVideoElement or HTMLAudioElement
@@ -65,7 +111,7 @@ const handleTrackPublication = (trackPublication, participant) => {
   // check if the trackPublication contains a `track` attribute. If it does,
   // we are subscribed to this track. If not, we are not subscribed.
   if (trackPublication.track) {
-    displayTrack(trackPublication.track);
+      displayTrack(trackPublication.track);
   }
 
   // listen for any new subscriptions to this track publication
